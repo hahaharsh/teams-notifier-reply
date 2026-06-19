@@ -1,0 +1,25 @@
+{
+  "name": "Teams Notifier",
+  "short_name": "TN Chats",
+  "description": "Read Teams notifications and reply to chats from your phone.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4fb",
+  "theme_color": "#5b5fc7",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%235b5fc7'/><text x='50%25' y='56%25' font-size='300' text-anchor='middle' fill='white' font-family='sans-serif'>📺</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='%235b5fc7'/><text x='50%25' y='56%25' font-size='300' text-anchor='middle' fill='white' font-family='sans-serif'>📺</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
