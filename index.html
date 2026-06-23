@@ -516,6 +516,48 @@ function extractChatUrl(click) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+ *  Version marker & cached-URL migration
+ * ───────────────────────────────────────────────────────────────────────── */
+
+const APP_VERSION = "2.1.0-chat-migration";
+console.info("[TN] phone webapp loaded", APP_VERSION);
+window.tnVersion = APP_VERSION;
+
+/**
+ * Rewrite a stored chat URL through extractChatUrl. Used to migrate cached
+ * chats from the v1.x era when the phone webapp would persist the entire
+ * extension click URL (https://<you>.github.io/.../?chat=<teams_url>&...)
+ * as the chat URL — meaning replies bounced back through ntfy with the
+ * github.io URL as `chat`, causing the extension's safety net to refuse to
+ * navigate. After migration, c.chatUrl is the inner Teams URL.
+ */
+function migrateChatUrl(url) {
+  if (!url) return url;
+  const extracted = extractChatUrl(url);
+  return extracted || url;
+}
+
+/**
+ * Of two candidate URLs for the same chat, return true if `next` is a
+ * better description than `prev` (i.e. should replace the stored value).
+ * Teams URL > non-Teams URL; specific path/hash > bare root.
+ */
+function isBetterChatUrl(next, prev) {
+  if (!next) return false;
+  if (!prev) return true;
+  try {
+    const teamsHost = /teams\.microsoft\.com|teams\.cloud\.microsoft|cloud\.microsoft/i;
+    const np = new URL(next), pp = new URL(prev);
+    const nTeams = teamsHost.test(np.hostname);
+    const pTeams = teamsHost.test(pp.hostname);
+    if (nTeams !== pTeams) return nTeams;   // promote to Teams; demote from Teams
+    // Same host kind → prefer URL with more "specificity" (hash + search)
+    const specificity = (u) => (u.hash || "").length + (u.search || "").length;
+    return specificity(np) > specificity(pp);
+  } catch { return false; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  *  In-memory state + chat aggregation
  * ───────────────────────────────────────────────────────────────────────── */
 
@@ -547,7 +589,10 @@ function upsertChat(m) {
     c.lastSender = m.sender;
     c.name = m.sender;
   }
-  if (!c.chatUrl && m.chatUrl) c.chatUrl = m.chatUrl;
+  // Always upgrade c.chatUrl to a better one when we see it. This is the
+  // fix for "old notifications stick the wrapper URL forever" — a newer
+  // event with the proper Teams URL now overwrites a stale wrapper.
+  if (isBetterChatUrl(m.chatUrl, c.chatUrl)) c.chatUrl = m.chatUrl;
   if (state.selected !== m.chatKey) c.unread++;
 }
 
@@ -559,8 +604,23 @@ function ingest(m) {
 }
 
 function hydrateFromCache() {
-  for (const m of loadMsgsCache()) ingest(m);
+  for (const m of loadMsgsCache()) {
+    // Migrate stale wrapper URLs from older versions of this webapp
+    if (m.chatUrl) m.chatUrl = migrateChatUrl(m.chatUrl);
+    ingest(m);
+  }
   state.outgoing = loadOut();
+  // Final pass: migrate any chat objects whose chatUrl was set from an old
+  // event that we never re-saw with a better URL (so upsertChat couldn't
+  // upgrade it on the fly).
+  let migrated = 0;
+  for (const c of state.chats.values()) {
+    if (c.chatUrl) {
+      const fixed = migrateChatUrl(c.chatUrl);
+      if (fixed !== c.chatUrl) { c.chatUrl = fixed; migrated++; }
+    }
+  }
+  if (migrated) console.info("[TN] migrated", migrated, "cached chat URL(s) to inner Teams URLs");
 }
 
 function persistMessages() {
