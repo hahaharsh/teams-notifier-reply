@@ -476,7 +476,14 @@ function parseEvent(evt) {
   }
 
   const chatUrl = extractChatUrl(evt.click);
-  const chatKey = chatUrl || sender;
+  // Group by sender name, NOT by chatUrl. The extension resolves chatUrl with
+  // DOM heuristics (chat-list scan, notification tag) that can return a
+  // different URL for the SAME conversation from one notification to the
+  // next (virtualized list, unread badges shifting, etc). Keying on that
+  // volatile URL fragmented every chat into several sidebar entries that
+  // popped in and out of order, each holding only part of the history.
+  // The sender name is what Teams' Notification API gives us consistently.
+  const chatKey = sender.toLowerCase().trim() || chatUrl || "unknown";
   return {
     id:      evt.id || `${evt.time || Date.now()}-${Math.random().toString(36).slice(2,8)}`,
     ts:      (evt.time ? evt.time * 1000 : Date.now()),
@@ -607,6 +614,11 @@ function hydrateFromCache() {
   for (const m of loadMsgsCache()) {
     // Migrate stale wrapper URLs from older versions of this webapp
     if (m.chatUrl) m.chatUrl = migrateChatUrl(m.chatUrl);
+    // Migrate chatKey from the old (volatile, URL-based) scheme to the
+    // sender-name scheme so previously-fragmented history re-merges into
+    // one chat instead of leaving the old split entries behind forever.
+    const wantKey = (m.sender || "").toLowerCase().trim();
+    if (wantKey) m.chatKey = wantKey;
     ingest(m);
   }
   state.outgoing = loadOut();
@@ -1016,15 +1028,16 @@ function boot() {
       const wantChat = q.get("chat");
       const wantName = q.get("name");
       if (wantChat || wantName) {
+        const wantKey = (wantName || "").toLowerCase().trim();
         const hit =
-          (wantChat && state.chats.get(wantChat)) ||
-          (wantName && [...state.chats.values()].find((c) => c.name === wantName));
+          (wantKey && state.chats.get(wantKey)) ||
+          (wantChat && [...state.chats.values()].find((c) => c.chatUrl === wantChat));
         if (hit) {
           selectChat(hit.chatKey);
         } else if (wantName) {
           // Pre-create a stub chat so the user can compose to a sender we
           // haven't received any messages from yet.
-          const key = wantChat || wantName;
+          const key = wantKey || wantChat;
           state.chats.set(key, {
             chatKey: key, name: wantName, count: 0,
             lastTs: Date.now(), lastBody: "(starting new chat)",
